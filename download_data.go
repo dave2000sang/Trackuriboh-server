@@ -25,21 +25,23 @@ func StartDownload() error {
 
 func downloadCardSets() error {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", "https://api.tcgplayer.com/catalog/categories/2/groups", nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Add("Authorization", "Bearer "+AccessToken)
 
-	// TODO: add paging loop, spawn new goroutines
 	// paging params
-	limit := 100	// seems like 100 is the limit
+	limit := 10	// seems like 100 is the limit
 	offset := 0
 	
 	parsedItems := 0
 	totalItems := 2147483647	// arbitrarily large number
+	var parsedData []models.CategoryData
+	// Paging loop, TODO: spawn new goroutines to speedup
 	for parsedItems < totalItems {
+		req, err := http.NewRequest("GET", "https://api.tcgplayer.com/catalog/categories/2/groups", nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Add("Authorization", "Bearer "+AccessToken)
 		q := req.URL.Query()
+		fmt.Printf("limit: %d, offset: %d\n", limit, offset)
 		q.Add("limit", fmt.Sprint(limit))
 		q.Add("offset", fmt.Sprint(offset))
 		req.URL.RawQuery = q.Encode()		// write back to request instance
@@ -49,8 +51,6 @@ func downloadCardSets() error {
 			return err
 		}
 		defer resp.Body.Close()
-		// var res map[string]interface{}
-		// json.NewDecoder(resp.Body).Decode(&res)
 		resData, err := io.ReadAll(resp.Body)
 		categoryRes := models.CategoryResponse{}
 		if err != nil {
@@ -60,11 +60,19 @@ func downloadCardSets() error {
 		if err != nil {
 			return err
 		}
-		// parse body
-		fmt.Println("GOT RESPONSE")
-		fmt.Println("totalItems:", categoryRes.TotalItems)
-		fmt.Println("results size:", len(categoryRes.Results))
-		fmt.Printf("results: %v", categoryRes.Results)
+		// TODO: parse body
+
+		// Continue fetching more responses
+		totalItems = categoryRes.TotalItems
+		parsedItems += len(categoryRes.Results)
+		fmt.Printf("GOT RESPONSE parsed: %d/%d, return count: %d\n", parsedItems, categoryRes.TotalItems, len(categoryRes.Results))
+		parsedData = append(parsedData, categoryRes.Results...)
+		if totalItems - parsedItems < limit {
+			limit = totalItems - parsedItems
+		}
+		offset = parsedItems
 	}
+	fmt.Printf("data: %v\n", parsedData)
+	fmt.Println(len(parsedData))
 	return nil
 }
