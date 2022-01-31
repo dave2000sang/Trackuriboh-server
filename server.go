@@ -1,25 +1,35 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// store API token as global var for now
+// Global variables
 var AccessToken string
+var MongoClient *mongo.Client
+
+// TODO: Move these to .env or somewhere safe before productionizing
+const MONGO_DB = "trackuriboh"
+const MONGO_PASSWORD = "compscilosers"
+const MONGO_CLUSTER = "FreeCluster"
 
 // handleDownload downloads all Yu-gi-oh data from TCGPlayer API
 func handleDownload(c *gin.Context) {
 	StartDownload()
 }
 
-func setupAuth() error {
+func setupApiAuth() error {
 	// TODO: move these to .env file or smt
 	grantType := "client_credentials"
 	clientId := "dfe8663b-1fee-41c5-a8be-095a4d4aa765"
@@ -47,6 +57,15 @@ func setupAuth() error {
 	return nil
 }
 
+func setupMongo() error {
+	var err error
+	clientOptions := options.Client().ApplyURI(fmt.Sprintf("mongodb+srv://devbitch:%s@freecluster.cwkoe.mongodb.net/%s?retryWrites=true&w=majority", MONGO_PASSWORD, MONGO_CLUSTER))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	MongoClient, err = mongo.Connect(ctx, clientOptions)
+	return err
+}
+
 func main() {
 	port := os.Getenv("PORT")
 
@@ -55,11 +74,15 @@ func main() {
 		log.Printf("Defaulting to port %s", port)
 	}
 
-	// Auth setup
-	err := setupAuth()
+	// TCG API auth setup
+	err := setupApiAuth()
 	if err != nil {
-		log.Print(err)
-		log.Fatal("Failed to generate access token")
+		log.Print("Failed to generate access token")
+		log.Fatal(err)
+	}
+
+	if err = setupMongo(); err != nil {
+		log.Fatal("Failed to configure mongo cluster")
 	}
 
 	// Starts a new Gin instance with no middle-ware
@@ -76,6 +99,6 @@ func main() {
 	r.GET("/download", handleDownload)
 
 	// Listen and serve on defined port
-	log.Printf("Listening on port %s", port)
+	log.Printf("Trackuriboh listening on port %s", port)
 	r.Run(":" + port)
 }
